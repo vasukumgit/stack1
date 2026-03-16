@@ -115,6 +115,20 @@ resource "aws_instance" "tf_infras" {
               apt install -y nginx
               systemctl enable nginx
               systemctl start nginx
+              # Install Node.js v20
+              curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+              apt install -y nodejs
+              # Verify Node and npm
+              node -v
+              npm -v
+              # Install MySQL Server
+              apt install -y mysql-server
+
+              # Start and enable MySQL
+              systemctl enable mysql
+              systemctl start mysql
+
+
               EOF
 
   tags = {
