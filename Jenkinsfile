@@ -10,16 +10,14 @@ pipeline {
         GIT_REPO           = 'https://github.com/vasukumgit/stack1.git'
         GIT_BRANCH         = 'main'
         TF_DIR             = 'terraform1'
-        APP_DIR            = 'graphic-design-tool-main'   // change this if needed
+        APP_DIR            = 'graphic-design-tool-main'
         AWS_DEFAULT_REGION = 'us-east-2'
 
-        BLUE_HOST          = '3.111.11.11'
-        GREEN_HOST         = '3.111.11.12'
-
-        BLUE_TG_ARN        = 'arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/blue-tg/xxxxxx'
-        GREEN_TG_ARN       = 'arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/green-tg/yyyyyy'
-
-        LISTENER_ARN       = 'arn:aws:elasticloadbalancing:us-east-2:123456789012:listener/app/my-alb/aaa/bbb'
+        BLUE_HOST          = ''
+        GREEN_HOST         = ''
+        BLUE_TG_ARN        = ''
+        GREEN_TG_ARN       = ''
+        LISTENER_ARN       = ''
 
         ACTIVE_ENV         = ''
         INACTIVE_ENV       = ''
@@ -55,6 +53,8 @@ pipeline {
                     pwd
                     echo "Files:"
                     ls -la
+                    echo "Terraform folder:"
+                    ls -la ${TF_DIR}
                     echo "App folder:"
                     ls -la ${APP_DIR}
                 """
@@ -105,6 +105,46 @@ pipeline {
             }
         }
 
+        stage('Load Terraform Outputs') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                script {
+                    env.BLUE_HOST = sh(
+                        script: "cd ${TF_DIR} && terraform output -raw blue_instance_public_ip",
+                        returnStdout: true
+                    ).trim()
+
+                    env.GREEN_HOST = sh(
+                        script: "cd ${TF_DIR} && terraform output -raw green_instance_public_ip",
+                        returnStdout: true
+                    ).trim()
+
+                    env.BLUE_TG_ARN = sh(
+                        script: "cd ${TF_DIR} && terraform output -raw blue_tg_arn",
+                        returnStdout: true
+                    ).trim()
+
+                    env.GREEN_TG_ARN = sh(
+                        script: "cd ${TF_DIR} && terraform output -raw green_tg_arn",
+                        returnStdout: true
+                    ).trim()
+
+                    env.LISTENER_ARN = sh(
+                        script: "cd ${TF_DIR} && terraform output -raw listener_arn",
+                        returnStdout: true
+                    ).trim()
+
+                    echo "BLUE_HOST: ${env.BLUE_HOST}"
+                    echo "GREEN_HOST: ${env.GREEN_HOST}"
+                    echo "BLUE_TG_ARN: ${env.BLUE_TG_ARN}"
+                    echo "GREEN_TG_ARN: ${env.GREEN_TG_ARN}"
+                    echo "LISTENER_ARN: ${env.LISTENER_ARN}"
+                }
+            }
+        }
+
         stage('Detect Active Environment') {
             when {
                 expression { params.ACTION == 'apply' }
@@ -114,7 +154,7 @@ pipeline {
                     def activeTG = sh(
                         script: """
                             aws elbv2 describe-listeners \
-                              --listener-arns ${LISTENER_ARN} \
+                              --listener-arns ${env.LISTENER_ARN} \
                               --query 'Listeners[0].DefaultActions[0].TargetGroupArn' \
                               --output text
                         """,
@@ -125,7 +165,7 @@ pipeline {
                         activeTG = sh(
                             script: """
                                 aws elbv2 describe-listeners \
-                                  --listener-arns ${LISTENER_ARN} \
+                                  --listener-arns ${env.LISTENER_ARN} \
                                   --query 'Listeners[0].DefaultActions[0].ForwardConfig.TargetGroups[0].TargetGroupArn' \
                                   --output text
                             """,
@@ -149,7 +189,7 @@ pipeline {
 
                     echo "Active environment: ${env.ACTIVE_ENV}"
                     echo "Inactive environment: ${env.INACTIVE_ENV}"
-                    echo "Deploy target host: ${env.TARGET_HOST}"
+                    echo "Deploying to host: ${env.TARGET_HOST}"
                 }
             }
         }
@@ -186,9 +226,9 @@ pipeline {
             steps {
                 sshagent(['ec2-ssh-key']) {
                     sh """
-                        scp -o StrictHostKeyChecking=no app.tar.gz ubuntu@${TARGET_HOST}:/home/ubuntu/
+                        scp -o StrictHostKeyChecking=no app.tar.gz ubuntu@${env.TARGET_HOST}:/home/ubuntu/
 
-                        ssh -o StrictHostKeyChecking=no ubuntu@${TARGET_HOST} '
+                        ssh -o StrictHostKeyChecking=no ubuntu@${env.TARGET_HOST} '
                             mkdir -p /home/ubuntu/app &&
                             rm -rf /home/ubuntu/app/* &&
                             tar -xzf /home/ubuntu/app.tar.gz -C /home/ubuntu/app &&
@@ -210,7 +250,7 @@ pipeline {
             steps {
                 sshagent(['ec2-ssh-key']) {
                     sh """
-                        ssh -o StrictHostKeyChecking=no ubuntu@${TARGET_HOST} '
+                        ssh -o StrictHostKeyChecking=no ubuntu@${env.TARGET_HOST} '
                             sleep 20
                             curl -f http://localhost:3000/ >/dev/null
                         '
@@ -226,8 +266,8 @@ pipeline {
             steps {
                 sh """
                     aws elbv2 modify-listener \
-                      --listener-arn ${LISTENER_ARN} \
-                      --default-actions Type=forward,TargetGroupArn=${NEW_TG_ARN}
+                      --listener-arn ${env.LISTENER_ARN} \
+                      --default-actions Type=forward,TargetGroupArn=${env.NEW_TG_ARN}
                 """
             }
         }
@@ -261,15 +301,15 @@ pipeline {
 
         failure {
             script {
-                if (params.ACTION == 'apply' && env.OLD_TG_ARN?.trim()) {
+                if (params.ACTION == 'apply' && env.OLD_TG_ARN?.trim() && env.LISTENER_ARN?.trim()) {
                     sh """
                         aws elbv2 modify-listener \
-                          --listener-arn ${LISTENER_ARN} \
-                          --default-actions Type=forward,TargetGroupArn=${OLD_TG_ARN} || true
+                          --listener-arn ${env.LISTENER_ARN} \
+                          --default-actions Type=forward,TargetGroupArn=${env.OLD_TG_ARN} || true
                     """
                     echo 'Pipeline failed. Rollback attempted.'
                 } else {
-                    echo 'Pipeline failed before traffic switch information was available.'
+                    echo 'Pipeline failed before rollback details were available.'
                 }
             }
         }
