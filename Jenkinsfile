@@ -10,7 +10,7 @@ pipeline {
         GIT_REPO           = 'https://github.com/vasukumgit/stack1.git'
         GIT_BRANCH         = 'main'
         TF_DIR             = 'terraform1'
-        APP_DIR            = 'graphic-design-tool-main'
+        APP_DIR            = 'graphic-design-tool-main/graphic-design-tool-blue'
         AWS_DEFAULT_REGION = 'us-east-2'
 
         BLUE_HOST          = ''
