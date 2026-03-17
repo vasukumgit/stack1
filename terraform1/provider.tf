@@ -1,9 +1,8 @@
 terraform {
   backend "s3" {
-    bucket         = "your-terraform-state-bucket"
+    bucket         = "vasu-terraform-state-us-east-2"
     key            = "bluegreen/terraform.tfstate"
     region         = "us-east-2"
-    dynamodb_table = "terraform-locks"
     encrypt        = true
   }
 
@@ -15,4 +14,8 @@ terraform {
   }
 
   required_version = ">= 1.0"
+}
+
+provider "aws" {
+  region = var.aws_region
 }
