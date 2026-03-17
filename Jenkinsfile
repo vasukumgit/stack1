@@ -7,7 +7,7 @@ pipeline {
     }
 
     environment {
-        GIT_REPO        = 'https://github.com/yourname/blue-green-project.git'
+        GIT_REPO        = 'https://github.com/vasukumgit/stack1.git'
         GIT_BRANCH      = 'main'
         TF_DIR          = 'terraform1'
         APP_DIR         = ''
