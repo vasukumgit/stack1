@@ -1,14 +1,21 @@
-variable "aws_region"{
-    default = "us-east-2"
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+  default     = "us-east-2"
 }
-variable "ami_id"{
-    description = "Ubuntu AMI ID"
-    type        = string
+
+variable "ami_id" {
+  description = "Ubuntu AMI ID"
+  type        = string
 }
-variable "instance_type " {
-    default = "t3.micro"
+
+variable "instance_type" {
+  description = "EC2 instance type"
+  type        = string
+  default     = "t3.micro"
 }
+
 variable "key_name" {
-  description = "jsm.pem"
+  description = "EC2 Key Pair name"
   type        = string
 }
