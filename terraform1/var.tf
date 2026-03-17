@@ -20,7 +20,3 @@ variable "key_name" {
   type        = string
 }
 
-variable "certificate_arn" {
-  description = "ACM certificate ARN for HTTPS listener"
-  type        = string
-}
