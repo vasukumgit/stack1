@@ -32,7 +32,9 @@ pipeline {
     stages {
         stage('Clean Workspace') {
             steps {
-                deleteDir()
+                sh '''
+                    rm -f app.tar.gz
+                '''
             }
         }
 
@@ -82,9 +84,7 @@ pipeline {
                     usernameVariable: 'AWS_ACCESS_KEY_ID',
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
-                    sh '''
-                        aws sts get-caller-identity
-                    '''
+                    sh 'aws sts get-caller-identity'
                 }
             }
         }
@@ -263,7 +263,6 @@ pipeline {
                 dir("${APP_DIR}/Backend") {
                     sh '''
                         npm install
-                        npm run build
                     '''
                 }
             }
@@ -361,7 +360,6 @@ pipeline {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     dir("${TF_DIR}") {
-                        sh 'terraform init -input=false'
                         sh 'terraform destroy -input=false -auto-approve'
                     }
                 }
