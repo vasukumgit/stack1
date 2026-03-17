@@ -121,21 +121,24 @@ pipeline {
         }
 
         stage('Terraform Plan') {
-            when {
-                expression { params.ACTION == 'apply' }
-            }
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'aws-creds',
-                    usernameVariable: 'AWS_ACCESS_KEY_ID',
-                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-                )]) {
-                    dir("${TF_DIR}") {
-                        sh 'terraform plan -input=false -out=tfplan'
-                    }
-                }
+    when {
+        expression { params.ACTION == 'apply' }
+    }
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'aws-creds',
+            usernameVariable: 'AWS_ACCESS_KEY_ID',
+            passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+        )]) {
+            dir("${TF_DIR}") {
+                sh '''
+                    rm -f tfplan
+                    terraform plan -input=false -out=tfplan
+                '''
             }
         }
+    }
+}
 
         stage('Terraform Apply') {
             when {
