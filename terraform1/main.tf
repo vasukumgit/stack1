@@ -8,14 +8,25 @@ resource "aws_vpc" "main" {
   }
 }
 
-resource "aws_subnet" "main" {
+resource "aws_subnet" "public_a" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
   availability_zone       = "${var.aws_region}a"
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "tfm-subnet"
+    Name = "tfm-public-a"
+  }
+}
+
+resource "aws_subnet" "public_b" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "${var.aws_region}b"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "tfm-public-b"
   }
 }
 
@@ -40,98 +51,12 @@ resource "aws_route_table" "rt" {
   }
 }
 
-resource "aws_route_table_association" "rta" {
-  subnet_id      = aws_subnet.main.id
+resource "aws_route_table_association" "rta_a" {
+  subnet_id      = aws_subnet.public_a.id
   route_table_id = aws_route_table.rt.id
 }
 
-resource "aws_security_group" "web_sg" {
-  name        = "web-sg"
-  description = "Allow SSH and HTTP"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-  description = "HTTPS"
-  from_port   = 443
-  to_port     = 443
-  protocol    = "tcp"
-  cidr_blocks = ["0.0.0.0/0"]
-}
-ingress {
-  description = "ALL TCP"
-  from_port   = 0
-  to_port     = 65535
-  protocol    = "tcp"
-  cidr_blocks = ["0.0.0.0/0"]
-}
-
-  ingress {
-    description = "App Port"
-    from_port   = 3000
-    to_port     = 3000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "tfm-sg"
-  }
-}
-
-resource "aws_instance" "tf_infras" {
-  ami                         = var.ami_id
-  instance_type               = var.instance_type
-  subnet_id                   = aws_subnet.main.id
-  vpc_security_group_ids      = [aws_security_group.web_sg.id]
-  key_name                    = var.key_name
-  associate_public_ip_address = true
-
-  user_data = <<-EOF
-              #!/bin/bash
-              apt update -y
-              apt install -y nginx
-              systemctl enable nginx
-              systemctl start nginx
-              # Install Node.js v20
-              curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-              apt install -y nodejs
-              # Verify Node and npm
-              node -v
-              npm -v
-              # Install MySQL Server
-              apt install -y mysql-server
-
-              # Start and enable MySQL
-              systemctl enable mysql
-              systemctl start mysql
-
-
-              EOF
-
-  tags = {
-    Name = "tf_infras-ec2"
-  }
+resource "aws_route_table_association" "rta_b" {
+  subnet_id      = aws_subnet.public_b.id
+  route_table_id = aws_route_table.rt.id
 }
