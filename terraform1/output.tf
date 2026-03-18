@@ -1,3 +1,7 @@
+output "alb_dns_name" {
+  value = aws_lb.app_alb.dns_name
+}
+
 output "blue_instance_public_ip" {
   value = aws_instance.blue.public_ip
 }
@@ -16,8 +20,4 @@ output "green_tg_arn" {
 
 output "listener_arn" {
   value = aws_lb_listener.http.arn
-}
-
-output "alb_dns_name" {
-  value = aws_lb.app_alb.dns_name
 }
