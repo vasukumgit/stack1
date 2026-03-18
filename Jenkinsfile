@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     tools {
-        nodejs 'node20'
+        nodejs 'node25'
     }
 
     environment {
@@ -163,47 +163,25 @@ pipeline {
                             sh '''
                                 export AWS_DEFAULT_REGION=us-east-2
                                 terraform apply -input=false -auto-approve tfplan
+
+                                terraform output -raw blue_instance_public_ip  > blue_host.txt
+                                terraform output -raw green_instance_public_ip > green_host.txt
+                                terraform output -raw blue_tg_arn              > blue_tg_arn.txt
+                                terraform output -raw green_tg_arn             > green_tg_arn.txt
+                                terraform output -raw listener_arn             > listener_arn.txt
                             '''
 
-                            env.BLUE_HOST = sh(
-                                script: '''
-                                    export AWS_DEFAULT_REGION=us-east-2
-                                    terraform output -raw blue_instance_public_ip
-                                ''',
-                                returnStdout: true
-                            ).trim()
+                            env.BLUE_HOST    = readFile('blue_host.txt').trim()
+                            env.GREEN_HOST   = readFile('green_host.txt').trim()
+                            env.BLUE_TG_ARN  = readFile('blue_tg_arn.txt').trim()
+                            env.GREEN_TG_ARN = readFile('green_tg_arn.txt').trim()
+                            env.LISTENER_ARN = readFile('listener_arn.txt').trim()
 
-                            env.GREEN_HOST = sh(
-                                script: '''
-                                    export AWS_DEFAULT_REGION=us-east-2
-                                    terraform output -raw green_instance_public_ip
-                                ''',
-                                returnStdout: true
-                            ).trim()
-
-                            env.BLUE_TG_ARN = sh(
-                                script: '''
-                                    export AWS_DEFAULT_REGION=us-east-2
-                                    terraform output -raw blue_tg_arn
-                                ''',
-                                returnStdout: true
-                            ).trim()
-
-                            env.GREEN_TG_ARN = sh(
-                                script: '''
-                                    export AWS_DEFAULT_REGION=us-east-2
-                                    terraform output -raw green_tg_arn
-                                ''',
-                                returnStdout: true
-                            ).trim()
-
-                            env.LISTENER_ARN = sh(
-                                script: '''
-                                    export AWS_DEFAULT_REGION=us-east-2
-                                    terraform output -raw listener_arn
-                                ''',
-                                returnStdout: true
-                            ).trim()
+                            echo "BLUE_HOST: ${env.BLUE_HOST}"
+                            echo "GREEN_HOST: ${env.GREEN_HOST}"
+                            echo "BLUE_TG_ARN: ${env.BLUE_TG_ARN}"
+                            echo "GREEN_TG_ARN: ${env.GREEN_TG_ARN}"
+                            echo "LISTENER_ARN: ${env.LISTENER_ARN}"
                         }
                     }
                 }
@@ -216,17 +194,18 @@ pipeline {
             }
             steps {
                 script {
+                    echo "Checking Terraform outputs..."
+                    echo "BLUE_HOST => ${env.BLUE_HOST}"
+                    echo "GREEN_HOST => ${env.GREEN_HOST}"
+                    echo "BLUE_TG_ARN => ${env.BLUE_TG_ARN}"
+                    echo "GREEN_TG_ARN => ${env.GREEN_TG_ARN}"
+                    echo "LISTENER_ARN => ${env.LISTENER_ARN}"
+
                     if (!env.BLUE_HOST?.trim())    error("BLUE_HOST is empty")
                     if (!env.GREEN_HOST?.trim())   error("GREEN_HOST is empty")
                     if (!env.BLUE_TG_ARN?.trim())  error("BLUE_TG_ARN is empty")
                     if (!env.GREEN_TG_ARN?.trim()) error("GREEN_TG_ARN is empty")
                     if (!env.LISTENER_ARN?.trim()) error("LISTENER_ARN is empty")
-
-                    echo "BLUE_HOST: ${env.BLUE_HOST}"
-                    echo "GREEN_HOST: ${env.GREEN_HOST}"
-                    echo "BLUE_TG_ARN: ${env.BLUE_TG_ARN}"
-                    echo "GREEN_TG_ARN: ${env.GREEN_TG_ARN}"
-                    echo "LISTENER_ARN: ${env.LISTENER_ARN}"
                 }
             }
         }
