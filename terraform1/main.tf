@@ -169,8 +169,12 @@ resource "aws_instance" "blue" {
 
   user_data = <<-EOF
               #!/bin/bash
-              apt update -y
-              apt install -y nginx curl mysql-server
+              set -euxo pipefail
+
+              export DEBIAN_FRONTEND=noninteractive
+
+              apt-get update -y
+              apt-get install -y curl nginx mysql-server ca-certificates gnupg
 
               systemctl enable nginx
               systemctl start nginx
@@ -179,12 +183,16 @@ resource "aws_instance" "blue" {
               systemctl start mysql
 
               curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-              apt install -y nodejs
+              apt-get install -y nodejs
 
               npm install -g pm2
 
               mkdir -p /home/ubuntu/app
               chown -R ubuntu:ubuntu /home/ubuntu/app
+
+              node -v > /home/ubuntu/node_version.txt
+              npm -v > /home/ubuntu/npm_version.txt
+              pm2 -v > /home/ubuntu/pm2_version.txt
               EOF
 
   tags = {
@@ -203,8 +211,12 @@ resource "aws_instance" "green" {
 
   user_data = <<-EOF
               #!/bin/bash
-              apt update -y
-              apt install -y nginx curl mysql-server
+              set -euxo pipefail
+
+              export DEBIAN_FRONTEND=noninteractive
+
+              apt-get update -y
+              apt-get install -y curl nginx mysql-server ca-certificates gnupg
 
               systemctl enable nginx
               systemctl start nginx
@@ -213,12 +225,16 @@ resource "aws_instance" "green" {
               systemctl start mysql
 
               curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-              apt install -y nodejs
+              apt-get install -y nodejs
 
               npm install -g pm2
 
               mkdir -p /home/ubuntu/app
               chown -R ubuntu:ubuntu /home/ubuntu/app
+
+              node -v > /home/ubuntu/node_version.txt
+              npm -v > /home/ubuntu/npm_version.txt
+              pm2 -v > /home/ubuntu/pm2_version.txt
               EOF
 
   tags = {
@@ -289,12 +305,16 @@ resource "aws_lb_target_group_attachment" "blue_attach" {
   target_group_arn = aws_lb_target_group.blue_tg.arn
   target_id        = aws_instance.blue.id
   port             = 5050
+
+  depends_on = [aws_instance.blue]
 }
 
 resource "aws_lb_target_group_attachment" "green_attach" {
   target_group_arn = aws_lb_target_group.green_tg.arn
   target_id        = aws_instance.green.id
   port             = 5050
+
+  depends_on = [aws_instance.green]
 }
 
 resource "aws_lb_listener" "http" {
@@ -307,4 +327,3 @@ resource "aws_lb_listener" "http" {
     target_group_arn = aws_lb_target_group.blue_tg.arn
   }
 }
-
