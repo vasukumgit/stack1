@@ -338,38 +338,48 @@ pipeline {
             }
         }
 
-        stage('Deploy to Inactive Environment') {
-            when {
-                expression { params.ACTION == 'apply' }
+       stage('Deploy to Inactive Environment') {
+    when {
+        expression { params.ACTION == 'apply' }
+    }
+    steps {
+        script {
+            def targetHost = readFile("${TF_DIR}/target_host.txt").trim()
+            if (!targetHost) {
+                error("TARGET_HOST is empty")
             }
-            steps {
-                script {
-                    def targetHost = readFile("${TF_DIR}/target_host.txt").trim()
-                    if (!targetHost) {
-                        error("TARGET_HOST is empty")
-                    }
 
-                    sshagent(['ec2-ssh-key']) {
-                        sh """
-                            scp -o StrictHostKeyChecking=no app.tar.gz ubuntu@${targetHost}:/home/ubuntu/app.tar.gz
+            sshagent(['ec2-ssh-key']) {
+                sh """
+                    scp -o StrictHostKeyChecking=no app.tar.gz ubuntu@${targetHost}:/home/ubuntu/app.tar.gz
 
-                            ssh -o StrictHostKeyChecking=no ubuntu@${targetHost} '
-                                set -e
-                                mkdir -p /home/ubuntu/app
-                                rm -rf /home/ubuntu/app/*
-                                tar -xzf /home/ubuntu/app.tar.gz -C /home/ubuntu/app
-                                cd /home/ubuntu/app/Backend
-                                npm install
+                    ssh -o StrictHostKeyChecking=no ubuntu@${targetHost} '
+                        set -e
+                        if ! command -v node >/dev/null 2>&1; then
+                            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                            sudo apt-get update
+                            sudo apt-get install -y nodejs
+                        fi
 
-                                pm2 delete app || true
-                                pm2 start server.js --name app
-                                pm2 save
-                            '
-                        """
-                    }
-                }
+                        if ! command -v pm2 >/dev/null 2>&1; then
+                            sudo npm install -g pm2
+                        fi
+
+                        mkdir -p /home/ubuntu/app
+                        rm -rf /home/ubuntu/app/*
+                        tar -xzf /home/ubuntu/app.tar.gz -C /home/ubuntu/app
+                        cd /home/ubuntu/app/Backend
+                        npm install
+
+                        pm2 delete app || true
+                        pm2 start server.js --name app
+                        pm2 save
+                    '
+                """
             }
         }
+    }
+}
 
         stage('Health Check') {
             when {
