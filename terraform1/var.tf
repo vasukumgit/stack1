@@ -4,11 +4,6 @@ variable "aws_region" {
   default     = "us-east-2"
 }
 
-variable "ami_id" {
-  description = "Ubuntu AMI ID"
-  type        = string
-}
-
 variable "instance_type" {
   description = "EC2 instance type"
   type        = string
@@ -20,3 +15,8 @@ variable "key_name" {
   type        = string
 }
 
+variable "certificate_arn" {
+  description = "ACM certificate ARN"
+  type        = string
+  default     = ""
+}
