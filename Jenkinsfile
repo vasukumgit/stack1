@@ -160,28 +160,43 @@ pipeline {
         )]) {
             dir("${TF_DIR}") {
                 script {
-                    def tfOutputJson = sh(
-                        script: '''
-                            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
-                            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
-                            export AWS_DEFAULT_REGION=us-east-2
+                    sh '''
+                        export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                        export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+                        export AWS_DEFAULT_REGION=us-east-2
 
-                            terraform apply -input=false -auto-approve tfplan
-                            terraform output -json
-                        ''',
-                        returnStdout: true
-                    ).trim()
+                        terraform apply -input=false -auto-approve tfplan
 
-                    echo "Terraform output JSON: ${tfOutputJson}"
+                        BLUE_HOST=$(terraform output -raw blue_instance_public_ip)
+                        GREEN_HOST=$(terraform output -raw green_instance_public_ip)
+                        BLUE_TG_ARN=$(terraform output -raw blue_tg_arn)
+                        GREEN_TG_ARN=$(terraform output -raw green_tg_arn)
+                        LISTENER_ARN=$(terraform output -raw listener_arn)
 
-                    writeFile file: 'tfout.json', text: tfOutputJson
-                    def tf = readJSON file: 'tfout.json'
+                        printf "%s" "$BLUE_HOST" > blue_host.txt
+                        printf "%s" "$GREEN_HOST" > green_host.txt
+                        printf "%s" "$BLUE_TG_ARN" > blue_tg_arn.txt
+                        printf "%s" "$GREEN_TG_ARN" > green_tg_arn.txt
+                        printf "%s" "$LISTENER_ARN" > listener_arn.txt
 
-                    env.BLUE_HOST    = tf.blue_instance_public_ip.value.toString().trim()
-                    env.GREEN_HOST   = tf.green_instance_public_ip.value.toString().trim()
-                    env.BLUE_TG_ARN  = tf.blue_tg_arn.value.toString().trim()
-                    env.GREEN_TG_ARN = tf.green_tg_arn.value.toString().trim()
-                    env.LISTENER_ARN = tf.listener_arn.value.toString().trim()
+                        echo "=== DEBUG FILES ==="
+                        cat blue_host.txt
+                        echo
+                        cat green_host.txt
+                        echo
+                        cat blue_tg_arn.txt
+                        echo
+                        cat green_tg_arn.txt
+                        echo
+                        cat listener_arn.txt
+                        echo
+                    '''
+
+                    env.BLUE_HOST    = readFile('blue_host.txt').trim()
+                    env.GREEN_HOST   = readFile('green_host.txt').trim()
+                    env.BLUE_TG_ARN  = readFile('blue_tg_arn.txt').trim()
+                    env.GREEN_TG_ARN = readFile('green_tg_arn.txt').trim()
+                    env.LISTENER_ARN = readFile('listener_arn.txt').trim()
 
                     echo "BLUE_HOST: ${env.BLUE_HOST}"
                     echo "GREEN_HOST: ${env.GREEN_HOST}"
