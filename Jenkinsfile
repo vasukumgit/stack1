@@ -32,9 +32,7 @@ pipeline {
     stages {
         stage('Clean Workspace') {
             steps {
-                sh '''
-                    rm -f app.tar.gz
-                '''
+                deleteDir()
             }
         }
 
@@ -84,7 +82,10 @@ pipeline {
                     usernameVariable: 'AWS_ACCESS_KEY_ID',
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
-                    sh 'aws sts get-caller-identity'
+                    sh '''
+                        export AWS_DEFAULT_REGION=us-east-2
+                        aws sts get-caller-identity
+                    '''
                 }
             }
         }
@@ -97,7 +98,10 @@ pipeline {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     dir("${TF_DIR}") {
-                        sh 'terraform init -input=false'
+                        sh '''
+                            export AWS_DEFAULT_REGION=us-east-2
+                            terraform init -input=false
+                        '''
                     }
                 }
             }
@@ -114,31 +118,35 @@ pipeline {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     dir("${TF_DIR}") {
-                        sh 'terraform validate'
+                        sh '''
+                            export AWS_DEFAULT_REGION=us-east-2
+                            terraform validate
+                        '''
                     }
                 }
             }
         }
 
         stage('Terraform Plan') {
-    when {
-        expression { params.ACTION == 'apply' }
-    }
-    steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'aws-creds',
-            usernameVariable: 'AWS_ACCESS_KEY_ID',
-            passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-        )]) {
-            dir("${TF_DIR}") {
-                sh '''
-                    rm -f tfplan
-                    terraform plan -input=false -out=tfplan
-                '''
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
+                    dir("${TF_DIR}") {
+                        sh '''
+                            export AWS_DEFAULT_REGION=us-east-2
+                            rm -f tfplan
+                            terraform plan -input=false -out=tfplan
+                        '''
+                    }
+                }
             }
         }
-    }
-}
 
         stage('Terraform Apply') {
             when {
@@ -151,77 +159,125 @@ pipeline {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     dir("${TF_DIR}") {
-                        sh 'terraform apply -input=false -auto-approve tfplan'
+                        script {
+                            sh '''
+                                export AWS_DEFAULT_REGION=us-east-2
+                                terraform apply -input=false -auto-approve tfplan
+                            '''
+
+                            env.BLUE_HOST = sh(
+                                script: '''
+                                    export AWS_DEFAULT_REGION=us-east-2
+                                    terraform output -raw blue_instance_public_ip
+                                ''',
+                                returnStdout: true
+                            ).trim()
+
+                            env.GREEN_HOST = sh(
+                                script: '''
+                                    export AWS_DEFAULT_REGION=us-east-2
+                                    terraform output -raw green_instance_public_ip
+                                ''',
+                                returnStdout: true
+                            ).trim()
+
+                            env.BLUE_TG_ARN = sh(
+                                script: '''
+                                    export AWS_DEFAULT_REGION=us-east-2
+                                    terraform output -raw blue_tg_arn
+                                ''',
+                                returnStdout: true
+                            ).trim()
+
+                            env.GREEN_TG_ARN = sh(
+                                script: '''
+                                    export AWS_DEFAULT_REGION=us-east-2
+                                    terraform output -raw green_tg_arn
+                                ''',
+                                returnStdout: true
+                            ).trim()
+
+                            env.LISTENER_ARN = sh(
+                                script: '''
+                                    export AWS_DEFAULT_REGION=us-east-2
+                                    terraform output -raw listener_arn
+                                ''',
+                                returnStdout: true
+                            ).trim()
+                        }
                     }
                 }
             }
         }
 
-        stage('Load Terraform Outputs') {
-    steps {
-        dir('terraform1') {
-            script {
-                env.BLUE_HOST    = sh(script: 'terraform output -raw blue_instance_public_ip', returnStdout: true).trim()
-                env.GREEN_HOST   = sh(script: 'terraform output -raw green_instance_public_ip', returnStdout: true).trim()
-                env.BLUE_TG_ARN  = sh(script: 'terraform output -raw blue_tg_arn', returnStdout: true).trim()
-                env.GREEN_TG_ARN = sh(script: 'terraform output -raw green_tg_arn', returnStdout: true).trim()
-                env.LISTENER_ARN = sh(script: 'terraform output -raw listener_arn', returnStdout: true).trim()
+        stage('Validate Terraform Outputs') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                script {
+                    if (!env.BLUE_HOST?.trim())    error("BLUE_HOST is empty")
+                    if (!env.GREEN_HOST?.trim())   error("GREEN_HOST is empty")
+                    if (!env.BLUE_TG_ARN?.trim())  error("BLUE_TG_ARN is empty")
+                    if (!env.GREEN_TG_ARN?.trim()) error("GREEN_TG_ARN is empty")
+                    if (!env.LISTENER_ARN?.trim()) error("LISTENER_ARN is empty")
 
-                echo "BLUE_HOST: ${env.BLUE_HOST}"
-                echo "GREEN_HOST: ${env.GREEN_HOST}"
-                echo "BLUE_TG_ARN: ${env.BLUE_TG_ARN}"
-                echo "GREEN_TG_ARN: ${env.GREEN_TG_ARN}"
-                echo "LISTENER_ARN: ${env.LISTENER_ARN}"
+                    echo "BLUE_HOST: ${env.BLUE_HOST}"
+                    echo "GREEN_HOST: ${env.GREEN_HOST}"
+                    echo "BLUE_TG_ARN: ${env.BLUE_TG_ARN}"
+                    echo "GREEN_TG_ARN: ${env.GREEN_TG_ARN}"
+                    echo "LISTENER_ARN: ${env.LISTENER_ARN}"
+                }
             }
         }
-    }
-}
 
         stage('Detect Active Environment') {
-    steps {
-        script {
-            def activeTg = sh(
-                script: """
-                    aws elbv2 describe-listeners \
-                      --listener-arns ${env.LISTENER_ARN} \
-                      --query 'Listeners[0].DefaultActions[0].TargetGroupArn' \
-                      --output text
-                """,
-                returnStdout: true
-            ).trim()
-
-            echo "Currently active target group: ${activeTg}"
-
-            if (activeTg == env.BLUE_TG_ARN) {
-                env.ACTIVE_ENV = 'blue'
-                env.INACTIVE_ENV = 'green'
-                env.TARGET_HOST = env.GREEN_HOST
-                env.TARGET_TG_ARN = env.GREEN_TG_ARN
-            } else {
-                env.ACTIVE_ENV = 'green'
-                env.INACTIVE_ENV = 'blue'
-                env.TARGET_HOST = env.BLUE_HOST
-                env.TARGET_TG_ARN = env.BLUE_TG_ARN
+            when {
+                expression { params.ACTION == 'apply' }
             }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
+                    script {
+                        def activeTg = sh(
+                            script: """
+                                export AWS_DEFAULT_REGION=us-east-2
+                                aws elbv2 describe-listeners \
+                                  --listener-arns ${env.LISTENER_ARN} \
+                                  --query 'Listeners[0].DefaultActions[0].TargetGroupArn' \
+                                  --output text
+                            """,
+                            returnStdout: true
+                        ).trim()
 
-            echo "ACTIVE_ENV: ${env.ACTIVE_ENV}"
-            echo "INACTIVE_ENV: ${env.INACTIVE_ENV}"
-            echo "TARGET_HOST: ${env.TARGET_HOST}"
-            echo "TARGET_TG_ARN: ${env.TARGET_TG_ARN}"
+                        echo "Currently active target group: ${activeTg}"
+
+                        if (activeTg == env.BLUE_TG_ARN) {
+                            env.ACTIVE_ENV   = 'blue'
+                            env.INACTIVE_ENV = 'green'
+                            env.TARGET_HOST  = env.GREEN_HOST
+                            env.OLD_TG_ARN   = env.BLUE_TG_ARN
+                            env.NEW_TG_ARN   = env.GREEN_TG_ARN
+                        } else {
+                            env.ACTIVE_ENV   = 'green'
+                            env.INACTIVE_ENV = 'blue'
+                            env.TARGET_HOST  = env.BLUE_HOST
+                            env.OLD_TG_ARN   = env.GREEN_TG_ARN
+                            env.NEW_TG_ARN   = env.BLUE_TG_ARN
+                        }
+
+                        echo "ACTIVE_ENV: ${env.ACTIVE_ENV}"
+                        echo "INACTIVE_ENV: ${env.INACTIVE_ENV}"
+                        echo "TARGET_HOST: ${env.TARGET_HOST}"
+                        echo "OLD_TG_ARN: ${env.OLD_TG_ARN}"
+                        echo "NEW_TG_ARN: ${env.NEW_TG_ARN}"
+                    }
+                }
+            }
         }
-    }
-}       
-        stage('Validate Terraform Outputs') {
-     steps {
-        script {
-            if (!env.BLUE_HOST?.trim())    error("BLUE_HOST is empty")
-            if (!env.GREEN_HOST?.trim())   error("GREEN_HOST is empty")
-            if (!env.BLUE_TG_ARN?.trim())  error("BLUE_TG_ARN is empty")
-            if (!env.GREEN_TG_ARN?.trim()) error("GREEN_TG_ARN is empty")
-            if (!env.LISTENER_ARN?.trim()) error("LISTENER_ARN is empty")
-        }
-    }
-}
 
         stage('Build Application') {
             when {
@@ -231,7 +287,6 @@ pipeline {
                 dir("${APP_DIR}/Backend") {
                     sh '''
                         npm install
-                        node server.js 
                     '''
                 }
             }
@@ -265,7 +320,7 @@ pipeline {
                             tar -xzf /home/ubuntu/app.tar.gz -C /home/ubuntu/app
                             cd /home/ubuntu/app/Backend
                             npm install
-                            
+
                             pm2 delete app || true
                             pm2 start server.js --name app
                             pm2 save
@@ -302,6 +357,7 @@ pipeline {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     sh """
+                        export AWS_DEFAULT_REGION=us-east-2
                         aws elbv2 modify-listener \
                           --listener-arn ${env.LISTENER_ARN} \
                           --default-actions Type=forward,TargetGroupArn=${env.NEW_TG_ARN}
@@ -330,7 +386,10 @@ pipeline {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     dir("${TF_DIR}") {
-                        sh 'terraform destroy -input=false -auto-approve'
+                        sh '''
+                            export AWS_DEFAULT_REGION=us-east-2
+                            terraform destroy -input=false -auto-approve
+                        '''
                     }
                 }
             }
@@ -351,6 +410,7 @@ pipeline {
                         passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                     )]) {
                         sh """
+                            export AWS_DEFAULT_REGION=us-east-2
                             aws elbv2 modify-listener \
                               --listener-arn ${env.LISTENER_ARN} \
                               --default-actions Type=forward,TargetGroupArn=${env.OLD_TG_ARN} || true
