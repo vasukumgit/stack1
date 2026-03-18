@@ -149,66 +149,72 @@ pipeline {
         }
 
         stage('Terraform Apply') {
-            when {
-                expression { params.ACTION == 'apply' }
-            }
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'aws-creds',
-                    usernameVariable: 'AWS_ACCESS_KEY_ID',
-                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-                )]) {
-                    dir("${TF_DIR}") {
-                        script {
-                            sh '''
-                                export AWS_DEFAULT_REGION=us-east-2
-                                terraform apply -input=false -auto-approve tfplan
+    when {
+        expression { params.ACTION == 'apply' }
+    }
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'aws-creds',
+            usernameVariable: 'AWS_ACCESS_KEY_ID',
+            passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+        )]) {
+            dir("${TF_DIR}") {
+                script {
+                    sh '''
+                        export AWS_DEFAULT_REGION=us-east-2
+                        terraform apply -input=false -auto-approve tfplan
+                    '''
 
-                                terraform output -raw blue_instance_public_ip  > blue_host.txt
-                                terraform output -raw green_instance_public_ip > green_host.txt
-                                terraform output -raw blue_tg_arn              > blue_tg_arn.txt
-                                terraform output -raw green_tg_arn             > green_tg_arn.txt
-                                terraform output -raw listener_arn             > listener_arn.txt
-                            '''
+                    def tfOutputJson = sh(
+                        script: '''
+                            export AWS_DEFAULT_REGION=us-east-2
+                            terraform output -json
+                        ''',
+                        returnStdout: true
+                    ).trim()
 
-                            env.BLUE_HOST    = readFile('blue_host.txt').trim()
-                            env.GREEN_HOST   = readFile('green_host.txt').trim()
-                            env.BLUE_TG_ARN  = readFile('blue_tg_arn.txt').trim()
-                            env.GREEN_TG_ARN = readFile('green_tg_arn.txt').trim()
-                            env.LISTENER_ARN = readFile('listener_arn.txt').trim()
+                    echo "Terraform output JSON: ${tfOutputJson}"
 
-                            echo "BLUE_HOST: ${env.BLUE_HOST}"
-                            echo "GREEN_HOST: ${env.GREEN_HOST}"
-                            echo "BLUE_TG_ARN: ${env.BLUE_TG_ARN}"
-                            echo "GREEN_TG_ARN: ${env.GREEN_TG_ARN}"
-                            echo "LISTENER_ARN: ${env.LISTENER_ARN}"
-                        }
-                    }
+                    def tf = new groovy.json.JsonSlurperClassic().parseText(tfOutputJson)
+
+                    env.BLUE_HOST    = tf.blue_instance_public_ip?.value?.toString()?.trim() ?: ''
+                    env.GREEN_HOST   = tf.green_instance_public_ip?.value?.toString()?.trim() ?: ''
+                    env.BLUE_TG_ARN  = tf.blue_tg_arn?.value?.toString()?.trim() ?: ''
+                    env.GREEN_TG_ARN = tf.green_tg_arn?.value?.toString()?.trim() ?: ''
+                    env.LISTENER_ARN = tf.listener_arn?.value?.toString()?.trim() ?: ''
+
+                    echo "BLUE_HOST: ${env.BLUE_HOST}"
+                    echo "GREEN_HOST: ${env.GREEN_HOST}"
+                    echo "BLUE_TG_ARN: ${env.BLUE_TG_ARN}"
+                    echo "GREEN_TG_ARN: ${env.GREEN_TG_ARN}"
+                    echo "LISTENER_ARN: ${env.LISTENER_ARN}"
                 }
             }
         }
+    }
+}
 
         stage('Validate Terraform Outputs') {
-            when {
-                expression { params.ACTION == 'apply' }
-            }
-            steps {
-                script {
-                    echo "Checking Terraform outputs..."
-                    echo "BLUE_HOST => ${env.BLUE_HOST}"
-                    echo "GREEN_HOST => ${env.GREEN_HOST}"
-                    echo "BLUE_TG_ARN => ${env.BLUE_TG_ARN}"
-                    echo "GREEN_TG_ARN => ${env.GREEN_TG_ARN}"
-                    echo "LISTENER_ARN => ${env.LISTENER_ARN}"
+    when {
+        expression { params.ACTION == 'apply' }
+    }
+    steps {
+        script {
+            echo "Checking Terraform outputs..."
+            echo "BLUE_HOST => ${env.BLUE_HOST}"
+            echo "GREEN_HOST => ${env.GREEN_HOST}"
+            echo "BLUE_TG_ARN => ${env.BLUE_TG_ARN}"
+            echo "GREEN_TG_ARN => ${env.GREEN_TG_ARN}"
+            echo "LISTENER_ARN => ${env.LISTENER_ARN}"
 
-                    if (!env.BLUE_HOST?.trim())    error("BLUE_HOST is empty")
-                    if (!env.GREEN_HOST?.trim())   error("GREEN_HOST is empty")
-                    if (!env.BLUE_TG_ARN?.trim())  error("BLUE_TG_ARN is empty")
-                    if (!env.GREEN_TG_ARN?.trim()) error("GREEN_TG_ARN is empty")
-                    if (!env.LISTENER_ARN?.trim()) error("LISTENER_ARN is empty")
-                }
-            }
+            if (!env.BLUE_HOST)    error("BLUE_HOST is empty")
+            if (!env.GREEN_HOST)   error("GREEN_HOST is empty")
+            if (!env.BLUE_TG_ARN)  error("BLUE_TG_ARN is empty")
+            if (!env.GREEN_TG_ARN) error("GREEN_TG_ARN is empty")
+            if (!env.LISTENER_ARN) error("LISTENER_ARN is empty")
         }
+    }
+}
 
         stage('Detect Active Environment') {
             when {
