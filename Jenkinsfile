@@ -160,14 +160,13 @@ pipeline {
         )]) {
             dir("${TF_DIR}") {
                 script {
-                    sh '''
-                        export AWS_DEFAULT_REGION=us-east-2
-                        terraform apply -input=false -auto-approve tfplan
-                    '''
-
                     def tfOutputJson = sh(
                         script: '''
+                            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
                             export AWS_DEFAULT_REGION=us-east-2
+
+                            terraform apply -input=false -auto-approve tfplan
                             terraform output -json
                         ''',
                         returnStdout: true
@@ -177,11 +176,11 @@ pipeline {
 
                     def tf = new groovy.json.JsonSlurperClassic().parseText(tfOutputJson)
 
-                    env.BLUE_HOST    = tf.blue_instance_public_ip?.value?.toString()?.trim() ?: ''
-                    env.GREEN_HOST   = tf.green_instance_public_ip?.value?.toString()?.trim() ?: ''
-                    env.BLUE_TG_ARN  = tf.blue_tg_arn?.value?.toString()?.trim() ?: ''
-                    env.GREEN_TG_ARN = tf.green_tg_arn?.value?.toString()?.trim() ?: ''
-                    env.LISTENER_ARN = tf.listener_arn?.value?.toString()?.trim() ?: ''
+                    env.BLUE_HOST    = "${tf.blue_instance_public_ip.value}"
+                    env.GREEN_HOST   = "${tf.green_instance_public_ip.value}"
+                    env.BLUE_TG_ARN  = "${tf.blue_tg_arn.value}"
+                    env.GREEN_TG_ARN = "${tf.green_tg_arn.value}"
+                    env.LISTENER_ARN = "${tf.listener_arn.value}"
 
                     echo "BLUE_HOST: ${env.BLUE_HOST}"
                     echo "GREEN_HOST: ${env.GREEN_HOST}"
@@ -193,7 +192,6 @@ pipeline {
         }
     }
 }
-
         stage('Validate Terraform Outputs') {
     when {
         expression { params.ACTION == 'apply' }
@@ -207,63 +205,65 @@ pipeline {
             echo "GREEN_TG_ARN => ${env.GREEN_TG_ARN}"
             echo "LISTENER_ARN => ${env.LISTENER_ARN}"
 
-            if (!env.BLUE_HOST)    error("BLUE_HOST is empty")
-            if (!env.GREEN_HOST)   error("GREEN_HOST is empty")
-            if (!env.BLUE_TG_ARN)  error("BLUE_TG_ARN is empty")
-            if (!env.GREEN_TG_ARN) error("GREEN_TG_ARN is empty")
-            if (!env.LISTENER_ARN) error("LISTENER_ARN is empty")
+            if (!env.BLUE_HOST?.trim())    error("BLUE_HOST is empty")
+            if (!env.GREEN_HOST?.trim())   error("GREEN_HOST is empty")
+            if (!env.BLUE_TG_ARN?.trim())  error("BLUE_TG_ARN is empty")
+            if (!env.GREEN_TG_ARN?.trim()) error("GREEN_TG_ARN is empty")
+            if (!env.LISTENER_ARN?.trim()) error("LISTENER_ARN is empty")
         }
     }
 }
 
-        stage('Detect Active Environment') {
-            when {
-                expression { params.ACTION == 'apply' }
-            }
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'aws-creds',
-                    usernameVariable: 'AWS_ACCESS_KEY_ID',
-                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-                )]) {
-                    script {
-                        def activeTg = sh(
-                            script: """
-                                export AWS_DEFAULT_REGION=us-east-2
-                                aws elbv2 describe-listeners \
-                                  --listener-arns ${env.LISTENER_ARN} \
-                                  --query 'Listeners[0].DefaultActions[0].TargetGroupArn' \
-                                  --output text
-                            """,
-                            returnStdout: true
-                        ).trim()
+stage('Detect Active Environment') {
+    when {
+        expression { params.ACTION == 'apply' }
+    }
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'aws-creds',
+            usernameVariable: 'AWS_ACCESS_KEY_ID',
+            passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+        )]) {
+            script {
+                def activeTg = sh(
+                    script: """
+                        export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                        export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+                        export AWS_DEFAULT_REGION=us-east-2
 
-                        echo "Currently active target group: ${activeTg}"
+                        aws elbv2 describe-listeners \
+                          --listener-arns ${env.LISTENER_ARN} \
+                          --query 'Listeners[0].DefaultActions[0].TargetGroupArn' \
+                          --output text
+                    """,
+                    returnStdout: true
+                ).trim()
 
-                        if (activeTg == env.BLUE_TG_ARN) {
-                            env.ACTIVE_ENV   = 'blue'
-                            env.INACTIVE_ENV = 'green'
-                            env.TARGET_HOST  = env.GREEN_HOST
-                            env.OLD_TG_ARN   = env.BLUE_TG_ARN
-                            env.NEW_TG_ARN   = env.GREEN_TG_ARN
-                        } else {
-                            env.ACTIVE_ENV   = 'green'
-                            env.INACTIVE_ENV = 'blue'
-                            env.TARGET_HOST  = env.BLUE_HOST
-                            env.OLD_TG_ARN   = env.GREEN_TG_ARN
-                            env.NEW_TG_ARN   = env.BLUE_TG_ARN
-                        }
+                echo "Currently active target group: ${activeTg}"
 
-                        echo "ACTIVE_ENV: ${env.ACTIVE_ENV}"
-                        echo "INACTIVE_ENV: ${env.INACTIVE_ENV}"
-                        echo "TARGET_HOST: ${env.TARGET_HOST}"
-                        echo "OLD_TG_ARN: ${env.OLD_TG_ARN}"
-                        echo "NEW_TG_ARN: ${env.NEW_TG_ARN}"
-                    }
+                if (activeTg == env.BLUE_TG_ARN) {
+                    env.ACTIVE_ENV   = 'blue'
+                    env.INACTIVE_ENV = 'green'
+                    env.TARGET_HOST  = env.GREEN_HOST
+                    env.OLD_TG_ARN   = env.BLUE_TG_ARN
+                    env.NEW_TG_ARN   = env.GREEN_TG_ARN
+                } else {
+                    env.ACTIVE_ENV   = 'green'
+                    env.INACTIVE_ENV = 'blue'
+                    env.TARGET_HOST  = env.BLUE_HOST
+                    env.OLD_TG_ARN   = env.GREEN_TG_ARN
+                    env.NEW_TG_ARN   = env.BLUE_TG_ARN
                 }
+
+                echo "ACTIVE_ENV: ${env.ACTIVE_ENV}"
+                echo "INACTIVE_ENV: ${env.INACTIVE_ENV}"
+                echo "TARGET_HOST: ${env.TARGET_HOST}"
+                echo "OLD_TG_ARN: ${env.OLD_TG_ARN}"
+                echo "NEW_TG_ARN: ${env.NEW_TG_ARN}"
             }
         }
-
+    }
+}
         stage('Build Application') {
             when {
                 expression { params.ACTION == 'apply' }
