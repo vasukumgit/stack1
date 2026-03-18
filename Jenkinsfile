@@ -186,23 +186,6 @@ pipeline {
                                 printf "%s" "$BLUE_TG_ARN" > blue_tg_arn.txt
                                 printf "%s" "$GREEN_TG_ARN" > green_tg_arn.txt
                                 printf "%s" "$LISTENER_ARN" > listener_arn.txt
-
-                                echo "=== DEBUG FILES ==="
-                                echo "BLUE_HOST:"
-                                cat blue_host.txt
-                                echo
-                                echo "GREEN_HOST:"
-                                cat green_host.txt
-                                echo
-                                echo "BLUE_TG_ARN:"
-                                cat blue_tg_arn.txt
-                                echo
-                                echo "GREEN_TG_ARN:"
-                                cat green_tg_arn.txt
-                                echo
-                                echo "LISTENER_ARN:"
-                                cat listener_arn.txt
-                                echo
                             '''
 
                             env.BLUE_HOST    = readFile('blue_host.txt').trim()
@@ -289,25 +272,36 @@ pipeline {
 
                         echo "Currently active target group: ${activeTg}"
 
+                        def targetHost = ''
+                        def oldTgArn = ''
+                        def newTgArn = ''
+
                         if (activeTg == blueTgArn) {
                             env.ACTIVE_ENV   = 'blue'
                             env.INACTIVE_ENV = 'green'
-                            env.TARGET_HOST  = greenHost
-                            env.OLD_TG_ARN   = blueTgArn
-                            env.NEW_TG_ARN   = greenTgArn
+                            targetHost       = greenHost
+                            oldTgArn         = blueTgArn
+                            newTgArn         = greenTgArn
                         } else {
                             env.ACTIVE_ENV   = 'green'
                             env.INACTIVE_ENV = 'blue'
-                            env.TARGET_HOST  = blueHost
-                            env.OLD_TG_ARN   = greenTgArn
-                            env.NEW_TG_ARN   = blueTgArn
+                            targetHost       = blueHost
+                            oldTgArn         = greenTgArn
+                            newTgArn         = blueTgArn
                         }
+
+                        writeFile file: "${TF_DIR}/target_host.txt", text: targetHost
+                        writeFile file: "${TF_DIR}/old_tg_arn.txt", text: oldTgArn
+                        writeFile file: "${TF_DIR}/new_tg_arn.txt", text: newTgArn
 
                         env.BLUE_HOST    = blueHost
                         env.GREEN_HOST   = greenHost
                         env.BLUE_TG_ARN  = blueTgArn
                         env.GREEN_TG_ARN = greenTgArn
                         env.LISTENER_ARN = listenerArn
+                        env.TARGET_HOST  = targetHost
+                        env.OLD_TG_ARN   = oldTgArn
+                        env.NEW_TG_ARN   = newTgArn
 
                         echo "ACTIVE_ENV: ${env.ACTIVE_ENV}"
                         echo "INACTIVE_ENV: ${env.INACTIVE_ENV}"
@@ -349,23 +343,30 @@ pipeline {
                 expression { params.ACTION == 'apply' }
             }
             steps {
-                sshagent(['ec2-ssh-key']) {
-                    sh """
-                        scp -o StrictHostKeyChecking=no app.tar.gz ubuntu@${env.TARGET_HOST}:/home/ubuntu/app.tar.gz
+                script {
+                    def targetHost = readFile("${TF_DIR}/target_host.txt").trim()
+                    if (!targetHost) {
+                        error("TARGET_HOST is empty")
+                    }
 
-                        ssh -o StrictHostKeyChecking=no ubuntu@${env.TARGET_HOST} '
-                            set -e
-                            mkdir -p /home/ubuntu/app
-                            rm -rf /home/ubuntu/app/*
-                            tar -xzf /home/ubuntu/app.tar.gz -C /home/ubuntu/app
-                            cd /home/ubuntu/app/Backend
-                            npm install
+                    sshagent(['ec2-ssh-key']) {
+                        sh """
+                            scp -o StrictHostKeyChecking=no app.tar.gz ubuntu@${targetHost}:/home/ubuntu/app.tar.gz
 
-                            pm2 delete app || true
-                            pm2 start server.js --name app
-                            pm2 save
-                        '
-                    """
+                            ssh -o StrictHostKeyChecking=no ubuntu@${targetHost} '
+                                set -e
+                                mkdir -p /home/ubuntu/app
+                                rm -rf /home/ubuntu/app/*
+                                tar -xzf /home/ubuntu/app.tar.gz -C /home/ubuntu/app
+                                cd /home/ubuntu/app/Backend
+                                npm install
+
+                                pm2 delete app || true
+                                pm2 start server.js --name app
+                                pm2 save
+                            '
+                        """
+                    }
                 }
             }
         }
@@ -375,13 +376,20 @@ pipeline {
                 expression { params.ACTION == 'apply' }
             }
             steps {
-                sshagent(['ec2-ssh-key']) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ubuntu@${env.TARGET_HOST} '
-                            sleep 20
-                            curl -f http://localhost:5050/ >/dev/null
-                        '
-                    """
+                script {
+                    def targetHost = readFile("${TF_DIR}/target_host.txt").trim()
+                    if (!targetHost) {
+                        error("TARGET_HOST is empty")
+                    }
+
+                    sshagent(['ec2-ssh-key']) {
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ubuntu@${targetHost} '
+                                sleep 20
+                                curl -f http://localhost:5050/ >/dev/null
+                            '
+                        """
+                    }
                 }
             }
         }
@@ -396,15 +404,23 @@ pipeline {
                     usernameVariable: 'AWS_ACCESS_KEY_ID',
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
-                    sh """
-                        export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
-                        export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
-                        export AWS_DEFAULT_REGION=us-east-2
+                    script {
+                        def listenerArn = readFile("${TF_DIR}/listener_arn.txt").trim()
+                        def newTgArn    = readFile("${TF_DIR}/new_tg_arn.txt").trim()
 
-                        aws elbv2 modify-listener \
-                          --listener-arn ${env.LISTENER_ARN} \
-                          --default-actions Type=forward,TargetGroupArn=${env.NEW_TG_ARN}
-                    """
+                        if (!listenerArn) error("LISTENER_ARN is empty")
+                        if (!newTgArn)    error("NEW_TG_ARN is empty")
+
+                        sh """
+                            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+                            export AWS_DEFAULT_REGION=us-east-2
+
+                            aws elbv2 modify-listener \
+                              --listener-arn ${listenerArn} \
+                              --default-actions Type=forward,TargetGroupArn=${newTgArn}
+                        """
+                    }
                 }
             }
         }
@@ -448,7 +464,10 @@ pipeline {
 
         failure {
             script {
-                if (params.ACTION == 'apply' && env.OLD_TG_ARN?.trim() && env.LISTENER_ARN?.trim()) {
+                def listenerArn = fileExists("${TF_DIR}/listener_arn.txt") ? readFile("${TF_DIR}/listener_arn.txt").trim() : ''
+                def oldTgArn    = fileExists("${TF_DIR}/old_tg_arn.txt") ? readFile("${TF_DIR}/old_tg_arn.txt").trim() : ''
+
+                if (params.ACTION == 'apply' && oldTgArn && listenerArn) {
                     withCredentials([usernamePassword(
                         credentialsId: 'aws-creds',
                         usernameVariable: 'AWS_ACCESS_KEY_ID',
@@ -460,8 +479,8 @@ pipeline {
                             export AWS_DEFAULT_REGION=us-east-2
 
                             aws elbv2 modify-listener \
-                              --listener-arn ${env.LISTENER_ARN} \
-                              --default-actions Type=forward,TargetGroupArn=${env.OLD_TG_ARN} || true
+                              --listener-arn ${listenerArn} \
+                              --default-actions Type=forward,TargetGroupArn=${oldTgArn} || true
                         """
                     }
                     echo 'Pipeline failed. Rollback attempted.'
