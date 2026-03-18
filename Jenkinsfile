@@ -174,13 +174,14 @@ pipeline {
 
                     echo "Terraform output JSON: ${tfOutputJson}"
 
-                    def tf = new groovy.json.JsonSlurperClassic().parseText(tfOutputJson)
+                    writeFile file: 'tfout.json', text: tfOutputJson
+                    def tf = readJSON file: 'tfout.json'
 
-                    env.BLUE_HOST    = "${tf.blue_instance_public_ip.value}"
-                    env.GREEN_HOST   = "${tf.green_instance_public_ip.value}"
-                    env.BLUE_TG_ARN  = "${tf.blue_tg_arn.value}"
-                    env.GREEN_TG_ARN = "${tf.green_tg_arn.value}"
-                    env.LISTENER_ARN = "${tf.listener_arn.value}"
+                    env.BLUE_HOST    = tf.blue_instance_public_ip.value.toString().trim()
+                    env.GREEN_HOST   = tf.green_instance_public_ip.value.toString().trim()
+                    env.BLUE_TG_ARN  = tf.blue_tg_arn.value.toString().trim()
+                    env.GREEN_TG_ARN = tf.green_tg_arn.value.toString().trim()
+                    env.LISTENER_ARN = tf.listener_arn.value.toString().trim()
 
                     echo "BLUE_HOST: ${env.BLUE_HOST}"
                     echo "GREEN_HOST: ${env.GREEN_HOST}"
