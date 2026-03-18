@@ -355,15 +355,20 @@ pipeline {
 
                     ssh -o StrictHostKeyChecking=no ubuntu@${targetHost} '
                         set -e
-                        if ! command -v node >/dev/null 2>&1; then
-                            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-                            sudo apt-get update
-                            sudo apt-get install -y nodejs
-                        fi
 
-                        if ! command -v pm2 >/dev/null 2>&1; then
-                            sudo npm install -g pm2
-                        fi
+                        echo "Waiting for cloud-init and Node setup..."
+                        for i in {1..30}; do
+                            if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 && command -v pm2 >/dev/null 2>&1; then
+                                echo "Node, npm, and pm2 are ready"
+                                break
+                            fi
+                            echo "Still waiting..."
+                            sleep 10
+                        done
+
+                        command -v node
+                        command -v npm
+                        command -v pm2
 
                         mkdir -p /home/ubuntu/app
                         rm -rf /home/ubuntu/app/*
