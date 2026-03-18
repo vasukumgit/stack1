@@ -83,6 +83,8 @@ pipeline {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     sh '''
+                        export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                        export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
                         export AWS_DEFAULT_REGION=us-east-2
                         aws sts get-caller-identity
                     '''
@@ -99,6 +101,8 @@ pipeline {
                 )]) {
                     dir("${TF_DIR}") {
                         sh '''
+                            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
                             export AWS_DEFAULT_REGION=us-east-2
                             terraform init -input=false
                         '''
@@ -119,6 +123,8 @@ pipeline {
                 )]) {
                     dir("${TF_DIR}") {
                         sh '''
+                            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
                             export AWS_DEFAULT_REGION=us-east-2
                             terraform validate
                         '''
@@ -139,6 +145,8 @@ pipeline {
                 )]) {
                     dir("${TF_DIR}") {
                         sh '''
+                            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
                             export AWS_DEFAULT_REGION=us-east-2
                             rm -f tfplan
                             terraform plan -input=false -out=tfplan
@@ -149,137 +157,168 @@ pipeline {
         }
 
         stage('Terraform Apply') {
-    when {
-        expression { params.ACTION == 'apply' }
-    }
-    steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'aws-creds',
-            usernameVariable: 'AWS_ACCESS_KEY_ID',
-            passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-        )]) {
-            dir("${TF_DIR}") {
-                script {
-                    sh '''
-                        export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
-                        export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
-                        export AWS_DEFAULT_REGION=us-east-2
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
+                    dir("${TF_DIR}") {
+                        script {
+                            sh '''
+                                export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                                export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+                                export AWS_DEFAULT_REGION=us-east-2
 
-                        terraform apply -input=false -auto-approve tfplan
+                                terraform apply -input=false -auto-approve tfplan
 
-                        BLUE_HOST=$(terraform output -raw blue_instance_public_ip)
-                        GREEN_HOST=$(terraform output -raw green_instance_public_ip)
-                        BLUE_TG_ARN=$(terraform output -raw blue_tg_arn)
-                        GREEN_TG_ARN=$(terraform output -raw green_tg_arn)
-                        LISTENER_ARN=$(terraform output -raw listener_arn)
+                                BLUE_HOST=$(terraform output -raw blue_instance_public_ip)
+                                GREEN_HOST=$(terraform output -raw green_instance_public_ip)
+                                BLUE_TG_ARN=$(terraform output -raw blue_tg_arn)
+                                GREEN_TG_ARN=$(terraform output -raw green_tg_arn)
+                                LISTENER_ARN=$(terraform output -raw listener_arn)
 
-                        printf "%s" "$BLUE_HOST" > blue_host.txt
-                        printf "%s" "$GREEN_HOST" > green_host.txt
-                        printf "%s" "$BLUE_TG_ARN" > blue_tg_arn.txt
-                        printf "%s" "$GREEN_TG_ARN" > green_tg_arn.txt
-                        printf "%s" "$LISTENER_ARN" > listener_arn.txt
+                                printf "%s" "$BLUE_HOST" > blue_host.txt
+                                printf "%s" "$GREEN_HOST" > green_host.txt
+                                printf "%s" "$BLUE_TG_ARN" > blue_tg_arn.txt
+                                printf "%s" "$GREEN_TG_ARN" > green_tg_arn.txt
+                                printf "%s" "$LISTENER_ARN" > listener_arn.txt
 
-                        echo "=== DEBUG FILES ==="
-                        cat blue_host.txt
-                        echo
-                        cat green_host.txt
-                        echo
-                        cat blue_tg_arn.txt
-                        echo
-                        cat green_tg_arn.txt
-                        echo
-                        cat listener_arn.txt
-                        echo
-                    '''
+                                echo "=== DEBUG FILES ==="
+                                echo "BLUE_HOST:"
+                                cat blue_host.txt
+                                echo
+                                echo "GREEN_HOST:"
+                                cat green_host.txt
+                                echo
+                                echo "BLUE_TG_ARN:"
+                                cat blue_tg_arn.txt
+                                echo
+                                echo "GREEN_TG_ARN:"
+                                cat green_tg_arn.txt
+                                echo
+                                echo "LISTENER_ARN:"
+                                cat listener_arn.txt
+                                echo
+                            '''
 
-                    env.BLUE_HOST    = readFile('blue_host.txt').trim()
-                    env.GREEN_HOST   = readFile('green_host.txt').trim()
-                    env.BLUE_TG_ARN  = readFile('blue_tg_arn.txt').trim()
-                    env.GREEN_TG_ARN = readFile('green_tg_arn.txt').trim()
-                    env.LISTENER_ARN = readFile('listener_arn.txt').trim()
+                            env.BLUE_HOST    = readFile('blue_host.txt').trim()
+                            env.GREEN_HOST   = readFile('green_host.txt').trim()
+                            env.BLUE_TG_ARN  = readFile('blue_tg_arn.txt').trim()
+                            env.GREEN_TG_ARN = readFile('green_tg_arn.txt').trim()
+                            env.LISTENER_ARN = readFile('listener_arn.txt').trim()
 
-                    echo "BLUE_HOST: ${env.BLUE_HOST}"
-                    echo "GREEN_HOST: ${env.GREEN_HOST}"
-                    echo "BLUE_TG_ARN: ${env.BLUE_TG_ARN}"
-                    echo "GREEN_TG_ARN: ${env.GREEN_TG_ARN}"
-                    echo "LISTENER_ARN: ${env.LISTENER_ARN}"
+                            echo "BLUE_HOST: ${env.BLUE_HOST}"
+                            echo "GREEN_HOST: ${env.GREEN_HOST}"
+                            echo "BLUE_TG_ARN: ${env.BLUE_TG_ARN}"
+                            echo "GREEN_TG_ARN: ${env.GREEN_TG_ARN}"
+                            echo "LISTENER_ARN: ${env.LISTENER_ARN}"
+                        }
+                    }
                 }
             }
         }
-    }
-}
+
         stage('Validate Terraform Outputs') {
-    when {
-        expression { params.ACTION == 'apply' }
-    }
-    steps {
-        script {
-            echo "Checking Terraform outputs..."
-            echo "BLUE_HOST => ${env.BLUE_HOST}"
-            echo "GREEN_HOST => ${env.GREEN_HOST}"
-            echo "BLUE_TG_ARN => ${env.BLUE_TG_ARN}"
-            echo "GREEN_TG_ARN => ${env.GREEN_TG_ARN}"
-            echo "LISTENER_ARN => ${env.LISTENER_ARN}"
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                script {
+                    def blueHost    = readFile("${TF_DIR}/blue_host.txt").trim()
+                    def greenHost   = readFile("${TF_DIR}/green_host.txt").trim()
+                    def blueTgArn   = readFile("${TF_DIR}/blue_tg_arn.txt").trim()
+                    def greenTgArn  = readFile("${TF_DIR}/green_tg_arn.txt").trim()
+                    def listenerArn = readFile("${TF_DIR}/listener_arn.txt").trim()
 
-            if (!env.BLUE_HOST?.trim())    error("BLUE_HOST is empty")
-            if (!env.GREEN_HOST?.trim())   error("GREEN_HOST is empty")
-            if (!env.BLUE_TG_ARN?.trim())  error("BLUE_TG_ARN is empty")
-            if (!env.GREEN_TG_ARN?.trim()) error("GREEN_TG_ARN is empty")
-            if (!env.LISTENER_ARN?.trim()) error("LISTENER_ARN is empty")
-        }
-    }
-}
+                    echo "Checking Terraform outputs..."
+                    echo "BLUE_HOST => ${blueHost}"
+                    echo "GREEN_HOST => ${greenHost}"
+                    echo "BLUE_TG_ARN => ${blueTgArn}"
+                    echo "GREEN_TG_ARN => ${greenTgArn}"
+                    echo "LISTENER_ARN => ${listenerArn}"
 
-stage('Detect Active Environment') {
-    when {
-        expression { params.ACTION == 'apply' }
-    }
-    steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'aws-creds',
-            usernameVariable: 'AWS_ACCESS_KEY_ID',
-            passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-        )]) {
-            script {
-                def activeTg = sh(
-                    script: """
-                        export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
-                        export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
-                        export AWS_DEFAULT_REGION=us-east-2
+                    if (!blueHost)    error("BLUE_HOST is empty")
+                    if (!greenHost)   error("GREEN_HOST is empty")
+                    if (!blueTgArn)   error("BLUE_TG_ARN is empty")
+                    if (!greenTgArn)  error("GREEN_TG_ARN is empty")
+                    if (!listenerArn) error("LISTENER_ARN is empty")
 
-                        aws elbv2 describe-listeners \
-                          --listener-arns ${env.LISTENER_ARN} \
-                          --query 'Listeners[0].DefaultActions[0].TargetGroupArn' \
-                          --output text
-                    """,
-                    returnStdout: true
-                ).trim()
-
-                echo "Currently active target group: ${activeTg}"
-
-                if (activeTg == env.BLUE_TG_ARN) {
-                    env.ACTIVE_ENV   = 'blue'
-                    env.INACTIVE_ENV = 'green'
-                    env.TARGET_HOST  = env.GREEN_HOST
-                    env.OLD_TG_ARN   = env.BLUE_TG_ARN
-                    env.NEW_TG_ARN   = env.GREEN_TG_ARN
-                } else {
-                    env.ACTIVE_ENV   = 'green'
-                    env.INACTIVE_ENV = 'blue'
-                    env.TARGET_HOST  = env.BLUE_HOST
-                    env.OLD_TG_ARN   = env.GREEN_TG_ARN
-                    env.NEW_TG_ARN   = env.BLUE_TG_ARN
+                    env.BLUE_HOST    = blueHost
+                    env.GREEN_HOST   = greenHost
+                    env.BLUE_TG_ARN  = blueTgArn
+                    env.GREEN_TG_ARN = greenTgArn
+                    env.LISTENER_ARN = listenerArn
                 }
-
-                echo "ACTIVE_ENV: ${env.ACTIVE_ENV}"
-                echo "INACTIVE_ENV: ${env.INACTIVE_ENV}"
-                echo "TARGET_HOST: ${env.TARGET_HOST}"
-                echo "OLD_TG_ARN: ${env.OLD_TG_ARN}"
-                echo "NEW_TG_ARN: ${env.NEW_TG_ARN}"
             }
         }
-    }
-}
+
+        stage('Detect Active Environment') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
+                    script {
+                        def blueHost    = readFile("${TF_DIR}/blue_host.txt").trim()
+                        def greenHost   = readFile("${TF_DIR}/green_host.txt").trim()
+                        def blueTgArn   = readFile("${TF_DIR}/blue_tg_arn.txt").trim()
+                        def greenTgArn  = readFile("${TF_DIR}/green_tg_arn.txt").trim()
+                        def listenerArn = readFile("${TF_DIR}/listener_arn.txt").trim()
+
+                        def activeTg = sh(
+                            script: """
+                                export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                                export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+                                export AWS_DEFAULT_REGION=us-east-2
+
+                                aws elbv2 describe-listeners \
+                                  --listener-arns ${listenerArn} \
+                                  --query 'Listeners[0].DefaultActions[0].TargetGroupArn' \
+                                  --output text
+                            """,
+                            returnStdout: true
+                        ).trim()
+
+                        echo "Currently active target group: ${activeTg}"
+
+                        if (activeTg == blueTgArn) {
+                            env.ACTIVE_ENV   = 'blue'
+                            env.INACTIVE_ENV = 'green'
+                            env.TARGET_HOST  = greenHost
+                            env.OLD_TG_ARN   = blueTgArn
+                            env.NEW_TG_ARN   = greenTgArn
+                        } else {
+                            env.ACTIVE_ENV   = 'green'
+                            env.INACTIVE_ENV = 'blue'
+                            env.TARGET_HOST  = blueHost
+                            env.OLD_TG_ARN   = greenTgArn
+                            env.NEW_TG_ARN   = blueTgArn
+                        }
+
+                        env.BLUE_HOST    = blueHost
+                        env.GREEN_HOST   = greenHost
+                        env.BLUE_TG_ARN  = blueTgArn
+                        env.GREEN_TG_ARN = greenTgArn
+                        env.LISTENER_ARN = listenerArn
+
+                        echo "ACTIVE_ENV: ${env.ACTIVE_ENV}"
+                        echo "INACTIVE_ENV: ${env.INACTIVE_ENV}"
+                        echo "TARGET_HOST: ${env.TARGET_HOST}"
+                        echo "OLD_TG_ARN: ${env.OLD_TG_ARN}"
+                        echo "NEW_TG_ARN: ${env.NEW_TG_ARN}"
+                    }
+                }
+            }
+        }
+
         stage('Build Application') {
             when {
                 expression { params.ACTION == 'apply' }
@@ -358,7 +397,10 @@ stage('Detect Active Environment') {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     sh """
+                        export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                        export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
                         export AWS_DEFAULT_REGION=us-east-2
+
                         aws elbv2 modify-listener \
                           --listener-arn ${env.LISTENER_ARN} \
                           --default-actions Type=forward,TargetGroupArn=${env.NEW_TG_ARN}
@@ -388,6 +430,8 @@ stage('Detect Active Environment') {
                 )]) {
                     dir("${TF_DIR}") {
                         sh '''
+                            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
                             export AWS_DEFAULT_REGION=us-east-2
                             terraform destroy -input=false -auto-approve
                         '''
@@ -411,7 +455,10 @@ stage('Detect Active Environment') {
                         passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                     )]) {
                         sh """
+                            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+                            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
                             export AWS_DEFAULT_REGION=us-east-2
+
                             aws elbv2 modify-listener \
                               --listener-arn ${env.LISTENER_ARN} \
                               --default-actions Type=forward,TargetGroupArn=${env.OLD_TG_ARN} || true
