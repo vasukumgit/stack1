@@ -266,6 +266,7 @@ pipeline {
                 dir("${APP_DIR}/Backend") {
                     sh '''
                         npm install
+                        node server.js 
                     '''
                 }
             }
@@ -299,6 +300,7 @@ pipeline {
                             tar -xzf /home/ubuntu/app.tar.gz -C /home/ubuntu/app
                             cd /home/ubuntu/app/Backend
                             npm install
+                            
                             pm2 delete app || true
                             pm2 start server.js --name app
                             pm2 save
