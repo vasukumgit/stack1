@@ -158,105 +158,70 @@ pipeline {
         }
 
         stage('Load Terraform Outputs') {
-            when {
-                expression { params.ACTION == 'apply' }
-            }
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'aws-creds',
-                    usernameVariable: 'AWS_ACCESS_KEY_ID',
-                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-                )]) {
-                    script {
-                        env.BLUE_HOST = sh(
-                            script: "cd ${TF_DIR} && terraform output -raw blue_instance_public_ip",
-                            returnStdout: true
-                        ).trim()
+    steps {
+        dir('terraform1') {
+            script {
+                env.BLUE_HOST    = sh(script: 'terraform output -raw blue_instance_public_ip', returnStdout: true).trim()
+                env.GREEN_HOST   = sh(script: 'terraform output -raw green_instance_public_ip', returnStdout: true).trim()
+                env.BLUE_TG_ARN  = sh(script: 'terraform output -raw blue_tg_arn', returnStdout: true).trim()
+                env.GREEN_TG_ARN = sh(script: 'terraform output -raw green_tg_arn', returnStdout: true).trim()
+                env.LISTENER_ARN = sh(script: 'terraform output -raw listener_arn', returnStdout: true).trim()
 
-                        env.GREEN_HOST = sh(
-                            script: "cd ${TF_DIR} && terraform output -raw green_instance_public_ip",
-                            returnStdout: true
-                        ).trim()
-
-                        env.BLUE_TG_ARN = sh(
-                            script: "cd ${TF_DIR} && terraform output -raw blue_tg_arn",
-                            returnStdout: true
-                        ).trim()
-
-                        env.GREEN_TG_ARN = sh(
-                            script: "cd ${TF_DIR} && terraform output -raw green_tg_arn",
-                            returnStdout: true
-                        ).trim()
-
-                        env.LISTENER_ARN = sh(
-                            script: "cd ${TF_DIR} && terraform output -raw listener_arn",
-                            returnStdout: true
-                        ).trim()
-
-                        echo "BLUE_HOST: ${env.BLUE_HOST}"
-                        echo "GREEN_HOST: ${env.GREEN_HOST}"
-                        echo "BLUE_TG_ARN: ${env.BLUE_TG_ARN}"
-                        echo "GREEN_TG_ARN: ${env.GREEN_TG_ARN}"
-                        echo "LISTENER_ARN: ${env.LISTENER_ARN}"
-                    }
-                }
+                echo "BLUE_HOST: ${env.BLUE_HOST}"
+                echo "GREEN_HOST: ${env.GREEN_HOST}"
+                echo "BLUE_TG_ARN: ${env.BLUE_TG_ARN}"
+                echo "GREEN_TG_ARN: ${env.GREEN_TG_ARN}"
+                echo "LISTENER_ARN: ${env.LISTENER_ARN}"
             }
         }
+    }
+}
 
         stage('Detect Active Environment') {
-            when {
-                expression { params.ACTION == 'apply' }
+    steps {
+        script {
+            def activeTg = sh(
+                script: """
+                    aws elbv2 describe-listeners \
+                      --listener-arns ${env.LISTENER_ARN} \
+                      --query 'Listeners[0].DefaultActions[0].TargetGroupArn' \
+                      --output text
+                """,
+                returnStdout: true
+            ).trim()
+
+            echo "Currently active target group: ${activeTg}"
+
+            if (activeTg == env.BLUE_TG_ARN) {
+                env.ACTIVE_ENV = 'blue'
+                env.INACTIVE_ENV = 'green'
+                env.TARGET_HOST = env.GREEN_HOST
+                env.TARGET_TG_ARN = env.GREEN_TG_ARN
+            } else {
+                env.ACTIVE_ENV = 'green'
+                env.INACTIVE_ENV = 'blue'
+                env.TARGET_HOST = env.BLUE_HOST
+                env.TARGET_TG_ARN = env.BLUE_TG_ARN
             }
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'aws-creds',
-                    usernameVariable: 'AWS_ACCESS_KEY_ID',
-                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-                )]) {
-                    script {
-                        def activeTG = sh(
-                            script: """
-                                aws elbv2 describe-listeners \
-                                  --listener-arns ${env.LISTENER_ARN} \
-                                  --query 'Listeners[0].DefaultActions[0].TargetGroupArn' \
-                                  --output text
-                            """,
-                            returnStdout: true
-                        ).trim()
 
-                        if (activeTG == 'None' || activeTG == '') {
-                            activeTG = sh(
-                                script: """
-                                    aws elbv2 describe-listeners \
-                                      --listener-arns ${env.LISTENER_ARN} \
-                                      --query 'Listeners[0].DefaultActions[0].ForwardConfig.TargetGroups[0].TargetGroupArn' \
-                                      --output text
-                                """,
-                                returnStdout: true
-                            ).trim()
-                        }
-
-                        if (activeTG == env.BLUE_TG_ARN) {
-                            env.ACTIVE_ENV   = 'blue'
-                            env.INACTIVE_ENV = 'green'
-                            env.TARGET_HOST  = env.GREEN_HOST
-                            env.NEW_TG_ARN   = env.GREEN_TG_ARN
-                            env.OLD_TG_ARN   = env.BLUE_TG_ARN
-                        } else {
-                            env.ACTIVE_ENV   = 'green'
-                            env.INACTIVE_ENV = 'blue'
-                            env.TARGET_HOST  = env.BLUE_HOST
-                            env.NEW_TG_ARN   = env.BLUE_TG_ARN
-                            env.OLD_TG_ARN   = env.GREEN_TG_ARN
-                        }
-
-                        echo "Active environment: ${env.ACTIVE_ENV}"
-                        echo "Inactive environment: ${env.INACTIVE_ENV}"
-                        echo "Deploying to host: ${env.TARGET_HOST}"
-                    }
-                }
-            }
+            echo "ACTIVE_ENV: ${env.ACTIVE_ENV}"
+            echo "INACTIVE_ENV: ${env.INACTIVE_ENV}"
+            echo "TARGET_HOST: ${env.TARGET_HOST}"
+            echo "TARGET_TG_ARN: ${env.TARGET_TG_ARN}"
         }
+    }
+}       
+        stage('Validate Terraform Outputs') {
+     steps {
+        script {
+            if (!env.BLUE_HOST?.trim())    error("BLUE_HOST is empty")
+            if (!env.GREEN_HOST?.trim())   error("GREEN_HOST is empty")
+            if (!env.BLUE_TG_ARN?.trim())  error("BLUE_TG_ARN is empty")
+            if (!env.GREEN_TG_ARN?.trim()) error("GREEN_TG_ARN is empty")
+            if (!env.LISTENER_ARN?.trim()) error("LISTENER_ARN is empty")
+        }
+    }
+}
 
         stage('Build Application') {
             when {
