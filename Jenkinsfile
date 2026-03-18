@@ -356,19 +356,37 @@ pipeline {
                     ssh -o StrictHostKeyChecking=no ubuntu@${targetHost} '
                         set -e
 
-                        echo "Waiting for cloud-init and Node setup..."
-                        for i in {1..30}; do
-                            if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 && command -v pm2 >/dev/null 2>&1; then
-                                echo "Node, npm, and pm2 are ready"
-                                break
-                            fi
-                            echo "Still waiting..."
-                            sleep 10
-                        done
+                        echo "Waiting for cloud-init to finish..."
+                        if [ -f /var/lib/cloud/instance/boot-finished ]; then
+                            echo "cloud-init already finished"
+                        else
+                            for i in \$(seq 1 60); do
+                                if [ -f /var/lib/cloud/instance/boot-finished ]; then
+                                    echo "cloud-init finished"
+                                    break
+                                fi
+                                echo "cloud-init still running..."
+                                sleep 10
+                            done
+                        fi
 
-                        command -v node
-                        command -v npm
-                        command -v pm2
+                        echo "Checking Node/npm/pm2..."
+                        if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+                            echo "Node.js/npm missing, installing..."
+                            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                            sudo apt-get update -y
+                            sudo apt-get install -y nodejs
+                        fi
+
+                        if ! command -v pm2 >/dev/null 2>&1; then
+                            echo "pm2 missing, installing..."
+                            sudo npm install -g pm2
+                        fi
+
+                        echo "Versions:"
+                        node -v
+                        npm -v
+                        pm2 -v
 
                         mkdir -p /home/ubuntu/app
                         rm -rf /home/ubuntu/app/*
