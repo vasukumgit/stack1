@@ -1,0 +1,127 @@
+pipeline {
+    agent any
+
+    tools {
+        nodejs 'node20'
+    }
+
+    environment {
+        GIT_REPO           = ''
+        GIT_BRANCH         = 'main'
+        APP_DIR            = 'graphic-design-tool-main'
+        ARTIFACT_NAME      = 'app.tar.gz'
+        S3_BUCKET          = 'your-s3-bucket-name'
+        AWS_DEFAULT_REGION = 'us-east-2'
+
+        EC2_HOST           = 'your-ec2-public-ip'
+        EC2_USER           = 'ubuntu'
+        REMOTE_APP_DIR     = '/home/ubuntu/app'
+        HEALTH_URL         = 'http://your-ec2-public-ip:5050/health'
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git branch: "${GIT_BRANCH}", url: "${GIT_REPO}"
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                dir("${APP_DIR}") {
+                    sh 'npm install'
+                }
+            }
+        }
+
+        stage('Build App') {
+            steps {
+                dir("${APP_DIR}") {
+                    sh 'npm run build'
+                }
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                dir("${APP_DIR}") {
+                    sh 'npm test'
+                }
+            }
+        }
+
+        stage('Package Artifact') {
+            steps {
+                sh "tar -czf ${ARTIFACT_NAME} -C ${APP_DIR} ."
+            }
+        }
+
+        stage('Upload Artifact to S3') {
+            steps {
+                sh "aws s3 cp ${ARTIFACT_NAME} s3://${S3_BUCKET}/${ARTIFACT_NAME}"
+            }
+        }
+
+        stage('Deploy to EC2') {
+            steps {
+                sshagent(credentials: ['ec2-ssh-key']) {
+                    sh """
+                        scp -o StrictHostKeyChecking=no ${ARTIFACT_NAME} ${EC2_USER}@${EC2_HOST}:/tmp/
+
+                        ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} '
+                            sudo mkdir -p ${REMOTE_APP_DIR}
+                            sudo tar -xzf /tmp/${ARTIFACT_NAME} -C ${REMOTE_APP_DIR}
+                            cd ${REMOTE_APP_DIR}
+                            npm install --production
+                            pm2 restart app || pm2 start server.js --name app
+                        '
+                    """
+                }
+            }
+        }
+
+        stage('Verify Health') {
+            steps {
+                sh """
+                    sleep 15
+                    curl -f ${HEALTH_URL}
+                """
+            }
+        }
+
+        stage('Publish Deployment Metric to CloudWatch') {
+            steps {
+                sh '''
+                    aws cloudwatch put-metric-data \
+                      --namespace "Jenkins/Deployments" \
+                      --metric-name "DeploymentSuccess" \
+                      --value 1 \
+                      --unit Count \
+                      --dimensions Environment=Production,Application=GraphicDesignTool
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            mail to: 'yourmail@example.com',
+                 subject: "SUCCESS: Build ${env.BUILD_NUMBER}",
+                 body: "Deployment completed successfully."
+        }
+
+        failure {
+            sh '''
+                aws cloudwatch put-metric-data \
+                  --namespace "Jenkins/Deployments" \
+                  --metric-name "DeploymentFailure" \
+                  --value 1 \
+                  --unit Count \
+                  --dimensions Environment=Production,Application=GraphicDesignTool
+            '''
+            mail to: 'yourmail@example.com',
+                 subject: "FAILED: Build ${env.BUILD_NUMBER}",
+                 body: "Deployment failed."
+        }
+    }
+}
