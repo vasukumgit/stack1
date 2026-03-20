@@ -6,17 +6,17 @@ pipeline {
     }
 
     environment {
-        GIT_REPO           = ''
+        GIT_REPO           = 'https://github.com/vasukumgit/stack1.git'
         GIT_BRANCH         = 'main'
-        APP_DIR            = 'graphic-design-tool-main'
-        ARTIFACT_NAME      = 'app.tar.gz'
-        S3_BUCKET          = 'your-s3-bucket-name'
+        APP_DIR            = 'graphic-design-tool-main/graphic-design-tool-main'
+        ARTIFACT_NAME      = 'graphic_app.tar.gz'
+        S3_BUCKET          = 'vasu-terraform-state-us-east-2'
         AWS_DEFAULT_REGION = 'us-east-2'
 
-        EC2_HOST           = 'your-ec2-public-ip'
+        EC2_HOST           = '3.139.89.47'
         EC2_USER           = 'ubuntu'
         REMOTE_APP_DIR     = '/home/ubuntu/app'
-        HEALTH_URL         = 'http://your-ec2-public-ip:5050/health'
+        HEALTH_URL         = 'http://3.139.89.47:5050/health'
     }
 
     stages {
