@@ -24,7 +24,7 @@ pipeline {
 
         EC2_HOST           = '18.225.11.23'
         EC2_USER           = 'ubuntu'
-        REMOTE_APP_DIR     = '/home/ubuntu/app'
+        REMOTE_APP_DIR     = '/home/ubuntu/graphic-app'
 
         HEALTH_URL         = 'http://18.225.11.23:5050/health'
     }
@@ -130,8 +130,14 @@ pipeline {
 
                         ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} '
                             set -e
+
+                            if [ -z "${REMOTE_APP_DIR}" ] || [ "${REMOTE_APP_DIR}" = "/" ]; then
+                                echo "REMOTE_APP_DIR is invalid"
+                                exit 1
+                            fi
+
                             mkdir -p ${REMOTE_APP_DIR}
-                            rm -rf ${REMOTE_APP_DIR:?}/*
+                            rm -rf ${REMOTE_APP_DIR}/*
                             tar -xzf /tmp/${ARTIFACT_NAME} -C ${REMOTE_APP_DIR}
 
                             cd ${REMOTE_APP_DIR}/Backend
