@@ -44,7 +44,18 @@ pipeline {
                     echo "Repo files:"
                     ls -la
                     echo "Project structure:"
-                    find graphic-design-tool-main -maxdepth 3 -type f | sort || true
+                    find . -maxdepth 4 -type f | sort | head -300
+                    echo "package.json locations:"
+                    find . -name package.json | sort || true
+                '''
+            }
+        }
+
+        stage('Validate Paths') {
+            steps {
+                sh '''
+                    test -f "${BACKEND_DIR}/package.json" || { echo "Missing backend package.json at ${BACKEND_DIR}/package.json"; exit 1; }
+                    test -f "${FRONTEND_DIR}/package.json" || { echo "Missing frontend package.json at ${FRONTEND_DIR}/package.json"; exit 1; }
                 '''
             }
         }
@@ -68,9 +79,7 @@ pipeline {
         stage('Build Frontend') {
             steps {
                 dir("${FRONTEND_DIR}") {
-                    sh '''
-                        npm run build || echo "No frontend build script found, skipping"
-                    '''
+                    sh 'npm run build || echo "No frontend build script found, skipping"'
                 }
             }
         }
@@ -78,9 +87,7 @@ pipeline {
         stage('Run Backend Tests') {
             steps {
                 dir("${BACKEND_DIR}") {
-                    sh '''
-                        npm test || echo "No backend tests configured, skipping"
-                    '''
+                    sh 'npm test || echo "No backend tests configured, skipping"'
                 }
             }
         }
@@ -88,9 +95,7 @@ pipeline {
         stage('Run Frontend Tests') {
             steps {
                 dir("${FRONTEND_DIR}") {
-                    sh '''
-                        npm test || echo "No frontend tests configured, skipping"
-                    '''
+                    sh 'npm test || echo "No frontend tests configured, skipping"'
                 }
             }
         }
@@ -126,7 +131,7 @@ pipeline {
                         ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} '
                             set -e
                             mkdir -p ${REMOTE_APP_DIR}
-                            rm -rf ${REMOTE_APP_DIR}/*
+                            rm -rf ${REMOTE_APP_DIR:?}/*
                             tar -xzf /tmp/${ARTIFACT_NAME} -C ${REMOTE_APP_DIR}
 
                             cd ${REMOTE_APP_DIR}/Backend
