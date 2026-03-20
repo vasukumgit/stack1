@@ -14,10 +14,9 @@ pipeline {
         GIT_REPO           = 'https://github.com/vasukumgit/stack1.git'
         GIT_BRANCH         = 'main'
 
-        ROOT_DIR           = 'graphic-design-tool-main'
-        BACKEND_DIR        = 'graphic-design-tool-main/Backend'
-        FRONTEND_DIR       = 'graphic-design-tool-main/Frontend'
-
+        ROOT_DIR           = 'graphic-design-tool-main/graphic-design-tool-main'
+        BACKEND_DIR        = 'graphic-design-tool-main/graphic-design-tool-main/Backend'
+        FRONTEND_DIR       = 'graphic-design-tool-main/graphic-design-tool-main/Frontend'
         ARTIFACT_NAME      = 'graphic_app.tar.gz'
         S3_BUCKET          = 'vasu-terraform-state-us-east-2'
         AWS_DEFAULT_REGION = 'us-east-2'
