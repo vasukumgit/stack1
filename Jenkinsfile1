@@ -9,11 +9,13 @@ pipeline {
         GIT_REPO           = 'https://github.com/vasukumgit/stack1.git'
         GIT_BRANCH         = 'main'
         APP_DIR            = 'graphic-design-tool-main/graphic-design-tool-main'
+        BACKEND_DIR  = 'graphic-design-tool-main/Backend'
+        FRONTEND_DIR = 'graphic-design-tool-main/Frontend'
         ARTIFACT_NAME      = 'graphic_app.tar.gz'
         S3_BUCKET          = 'vasu-terraform-state-us-east-2'
         AWS_DEFAULT_REGION = 'us-east-2'
 
-        EC2_HOST           = '3.139.89.47'
+        EC2_HOST           = '18.225.11.23'
         EC2_USER           = 'ubuntu'
         REMOTE_APP_DIR     = '/home/ubuntu/app'
         HEALTH_URL         = 'http://3.139.89.47:5050/health'
@@ -28,20 +30,40 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                dir("${APP_DIR}") {
+                dir("${FRONTEND_DIR}") {
+                    sh 'apt install nginx'
+                    sh 'systemctl enable nginx'
                     sh 'npm install'
+
                 }
             }
         }
+         stage('Install Dependencies') {
+            steps {
+                dir("${BACKEND_DIR}") {
+                    sh 'npm install -g pm2'
+                    sh 'curl -fsSL https://deb.nodesource.com/setup_20.x | bash - '
+                    sh   'apt-get install -y nodejs'
+                    sh 'npm install'
 
+                }
+            }
+        }
         stage('Build App') {
             steps {
-                dir("${APP_DIR}") {
+                dir("${FRONTEND_DIR}") {
                     sh 'npm run build'
+                    sh 'systemctl restart nginx'
                 }
             }
         }
-
+        stage('Build App') {
+            steps {
+                dir("${BACKEND_DIR}") {
+                    sh 'node server.js'
+                }
+            }
+        }
         stage('Run Tests') {
             steps {
                 dir("${APP_DIR}") {
@@ -105,23 +127,41 @@ pipeline {
 
     post {
         success {
-            mail to: 'yourmail@example.com',
-                 subject: "SUCCESS: Build ${env.BUILD_NUMBER}",
-                 body: "Deployment completed successfully."
+            withCredentials([[
+                $class: 'AmazonWebServicesCredentialsBinding',
+                credentialsId: 'aws-creds'
+            ]]) {
+                sh '''
+                    aws cloudwatch put-metric-data \
+                      --namespace Jenkins/Deployments \
+                      --metric-name DeploymentSuccess \
+                      --value 1 \
+                      --unit Count \
+                      --dimensions Environment=Production,Application=GraphicDesignTool
+                '''
+            }
         }
 
         failure {
-            sh '''
-                aws cloudwatch put-metric-data \
-                  --namespace "Jenkins/Deployments" \
-                  --metric-name "DeploymentFailure" \
-                  --value 1 \
-                  --unit Count \
-                  --dimensions Environment=Production,Application=GraphicDesignTool
-            '''
-            mail to: 'yourmail@example.com',
-                 subject: "FAILED: Build ${env.BUILD_NUMBER}",
-                 body: "Deployment failed."
+            script {
+                try {
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-creds'
+                    ]]) {
+                        sh '''
+                            aws cloudwatch put-metric-data \
+                              --namespace Jenkins/Deployments \
+                              --metric-name DeploymentFailure \
+                              --value 1 \
+                              --unit Count \
+                              --dimensions Environment=Production,Application=GraphicDesignTool
+                        '''
+                    }
+                } catch (Exception e) {
+                    echo "CloudWatch metric skipped: AWS credentials not configured"
+                }
+            }
         }
     }
 }
