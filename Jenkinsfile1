@@ -17,13 +17,14 @@ pipeline {
         ROOT_DIR           = 'graphic-design-tool-main/graphic-design-tool-main'
         BACKEND_DIR        = 'graphic-design-tool-main/graphic-design-tool-main/Backend'
         FRONTEND_DIR       = 'graphic-design-tool-main/graphic-design-tool-main/Frontend'
+
         ARTIFACT_NAME      = 'graphic_app.tar.gz'
         S3_BUCKET          = 'vasu-terraform-state-us-east-2'
         AWS_DEFAULT_REGION = 'us-east-2'
 
         EC2_HOST           = '18.225.11.23'
         EC2_USER           = 'ubuntu'
-        REMOTE_APP_DIR     = '/home/ubuntu/graphic-app'
+        REMOTE_APP_DIR     = '/home/ubuntu/app'
 
         HEALTH_URL         = 'http://18.225.11.23:5050/health'
     }
@@ -43,7 +44,7 @@ pipeline {
                     echo "Repo files:"
                     ls -la
                     echo "Project structure:"
-                    find . -maxdepth 4 -type f | sort | head -300
+                    find . -maxdepth 5 -type f | sort | head -300
                     echo "package.json locations:"
                     find . -name package.json | sort || true
                 '''
@@ -108,28 +109,21 @@ pipeline {
             }
         }
 
-       stage('Upload Artifact to S3') {
-    steps {
-        withCredentials([[
-            $class: 'AmazonWebServicesCredentialsBinding',
-            credentialsId: 'aws-creds'
-        ]]) {
-            sh '''
-                echo "Checking artifact..."
-                ls -lh graphic_app.tar.gz
-
-                echo "Checking AWS CLI..."
-                aws --version
-
-                echo "Checking caller identity..."
-                aws sts get-caller-identity
-
-                echo "Uploading artifact to S3..."
-                aws s3 cp graphic_app.tar.gz s3://vasu-terraform-state-us-east-2/graphic_app.tar.gz --region us-east-2
-            '''
+        stage('Upload Artifact to S3') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
+                    sh '''
+                        aws --version
+                        aws sts get-caller-identity
+                        aws s3 cp graphic_app.tar.gz s3://vasu-terraform-state-us-east-2/graphic_app.tar.gz --region us-east-2
+                    '''
+                }
+            }
         }
-    }
-}
 
         stage('Deploy to EC2') {
             steps {
@@ -177,21 +171,23 @@ pipeline {
         success {
             script {
                 try {
-                    withCredentials([[
-                        $class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: 'aws-creds'
-                    ]]) {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'aws-creds',
+                        usernameVariable: 'AWS_ACCESS_KEY_ID',
+                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )]) {
                         sh '''
                             aws cloudwatch put-metric-data \
                               --namespace Jenkins/Deployments \
                               --metric-name DeploymentSuccess \
                               --value 1 \
                               --unit Count \
-                              --dimensions Environment=Production,Application=GraphicDesignTool
+                              --dimensions Environment=Production,Application=GraphicDesignTool \
+                              --region us-east-2
                         '''
                     }
                 } catch (Exception e) {
-                    echo "CloudWatch success metric skipped: AWS credentials not configured"
+                    echo "CloudWatch success metric skipped"
                 }
             }
         }
@@ -199,21 +195,23 @@ pipeline {
         failure {
             script {
                 try {
-                    withCredentials([[
-                        $class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: 'aws-creds'
-                    ]]) {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'aws-creds',
+                        usernameVariable: 'AWS_ACCESS_KEY_ID',
+                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )]) {
                         sh '''
                             aws cloudwatch put-metric-data \
                               --namespace Jenkins/Deployments \
                               --metric-name DeploymentFailure \
                               --value 1 \
                               --unit Count \
-                              --dimensions Environment=Production,Application=GraphicDesignTool
+                              --dimensions Environment=Production,Application=GraphicDesignTool \
+                              --region us-east-2
                         '''
                     }
                 } catch (Exception e) {
-                    echo "CloudWatch failure metric skipped: AWS credentials not configured"
+                    echo "CloudWatch failure metric skipped"
                 }
             }
         }
