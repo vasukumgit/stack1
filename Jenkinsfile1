@@ -126,48 +126,58 @@ pipeline {
         }
 
         stage('Deploy to EC2') {
-    steps {
-        sshagent(credentials: ['ec2-ssh-key']) {
-            sh """
-                scp -o StrictHostKeyChecking=no ${ARTIFACT_NAME} ${EC2_USER}@${EC2_HOST}:/tmp/
+            steps {
+                sshagent(credentials: ['ec2-ssh-key']) {
+                    sh """
+                        scp -o StrictHostKeyChecking=no ${ARTIFACT_NAME} ${EC2_USER}@${EC2_HOST}:/tmp/
 
-                ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} '
-                    set -e
+                        ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} '
+                            set -e
 
-                    if [ -z "${REMOTE_APP_DIR}" ] || [ "${REMOTE_APP_DIR}" = "/" ]; then
-                        echo "REMOTE_APP_DIR is invalid"
-                        exit 1
-                    fi
+                            if [ -z "${REMOTE_APP_DIR}" ] || [ "${REMOTE_APP_DIR}" = "/" ]; then
+                                echo "REMOTE_APP_DIR is invalid"
+                                exit 1
+                            fi
 
-                    mkdir -p ${REMOTE_APP_DIR}
-                    rm -rf ${REMOTE_APP_DIR}/*
-                    tar -xzf /tmp/${ARTIFACT_NAME} -C ${REMOTE_APP_DIR}
+                            mkdir -p ${REMOTE_APP_DIR}
+                            rm -rf ${REMOTE_APP_DIR}/*
+                            tar -xzf /tmp/${ARTIFACT_NAME} -C ${REMOTE_APP_DIR}
 
-                    cd ${REMOTE_APP_DIR}/Backend
-                    npm install --production
+                            cd ${REMOTE_APP_DIR}/Backend
+                            npm install --production
 
-                    if ! command -v pm2 >/dev/null 2>&1; then
-                        sudo npm install -g pm2
-                    fi
+                            if ! command -v pm2 >/dev/null 2>&1; then
+                                sudo npm install -g pm2
+                            fi
 
-                    pm2 delete app || true
-                    pm2 start server.js --name app
-                    pm2 save
+                            pm2 delete app || true
+                            pm2 start server.js --name app
+                            pm2 save
 
-                    sudo systemctl restart nginx || true
-                '
-            """
+                            sudo systemctl restart nginx || true
+                        '
+                    """
+                }
+            }
+        }
+
+        stage('Verify Health') {
+            steps {
+                sh """
+                    for i in 1 2 3 4 5; do
+                        echo "Health check attempt \$i"
+                        if curl -f ${HEALTH_URL}; then
+                            exit 0
+                        fi
+                        sleep 10
+                    done
+                    echo "Health check failed"
+                    exit 1
+                """
+            }
         }
     }
-}
-        stage('Verify Health') {
-    steps {
-        sh """
-            sleep 15
-            curl -f ${HEALTH_URL}
-        """
-    }
-}
+
     post {
         success {
             script {
